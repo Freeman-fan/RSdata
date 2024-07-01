@@ -11,10 +11,9 @@ import os
 
 
 # 读入envi图像
-# 输入：文件路径
-# 输出：包含各波段值的数组
+# 输入：文件路径file_path
+# 输出：包含各波段值的数组band_group
 def open_envi(file_path=""):
-    band_group = []
     if file_path == "":
         return -1
     if not os.path.isfile(file_path):
@@ -24,48 +23,92 @@ def open_envi(file_path=""):
         while True:
             band_index += 1
             try:
-                band_group.append(file.read(band_index))
+                band_group.append(file.read(band_index).astype(np.float16))
             except IndexError:
                 break
-
     return band_group
 
 
 # 两波段的提取运算
 # 输入：两个波段值为b1，b2
-# 输出：运算结果的图像
+# 输出：运算结果的图像output
 def band_math1(b1, b2):
     output = (b1 - b2) / (b1 + b2)
+
     return output
 
 
 # 创建主窗体
 def create_main_window():
-    # 按钮事件：打开文件
-    def open_file_dialog():
-        filepath = filedialog.askopenfilename()
+
+    def open_file_dialog():  # 按钮事件：打开文件
+        global band_group
+        filepath = tk.filedialog.askopenfilename()
         if filepath:
             entry_var.set(filepath)
-            status_label.config(text="文件已选择: " + filepath)
+            file_path = filepath
+        try:
+            band_group = open_envi(file_path=filepath)
+            status_label.config(text="文件已加载，共" + str(len(band_group)) + "波段")
+        except Exception as e:
+            messagebox.showerror("错误", e)
+            status_label.config(text="错误：文件路径有误或不是envi文件")
+            file_path = ''
 
-    # 按钮事件：NDVI计算
-    def calculate_ndvi():
-        pass
+    def calculate_ndvi():  # 按钮事件：NDVI计算
+        # 初始化变量
+        global band_group
+        global output_photo
+        output_photo = None
+        # 运算
+        band1 = band_group[4]
+        band2 = band_group[3]
+        try:
+            data = band_math1(b1=band1, b2=band2)
+            output_photo = np.where(data > -0.3, 1, 0)
+            status_label.config(text="NDVI运算完成")
+            return
+        except Exception as e:
+            messagebox.showerror("Unknown Error", e)
+            status_label.config(text="出现未知错误")
 
-    # 按钮事件：NDBI计算
-    def calculate_ndbi():
-        pass
+    def calculate_ndbi():  # 按钮事件：NDBI计算
+        # 初始化变量
+        global band_group
+        global output_photo
+        output_photo = None
+        # 运算
+        band1 = band_group[5]
+        band2 = band_group[4]
+        try:
+            data = band_math1(b1=band1, b2=band2)
+            output_photo = np.where(data > -0.3, 1, 0)
+            status_label.config(text="NDBI运算完成")
+        except Exception as e:
+            messagebox.showerror("Unknown Error", e)
+            status_label.config(text="出现未知错误")
 
-    # 按钮事件：MNDWI计算
-    def calculate_mndwi():
-        pass
+    def calculate_mndwi():  # 按钮事件：MNDWI计算
+        # 初始化变量
+        global band_group
+        global output_photo
+        output_photo = None
+        # 运算
+        band1 = band_group[2]
+        band2 = band_group[5]
+        try:
+            data = band_math1(b1=band1, b2=band2)
+            output_photo = np.where(data > 0.3, 1, 0)
+            status_label.config(text="MNDWI运算完成")
+        except Exception as e:
+            messagebox.showerror("Unknown Error", e)
+            status_label.config(text="出现未知错误")
 
-    # 按钮事件：显示图像
-    def show_image(image_data):
-        pass
+    def show_image():  # 按钮事件：显示图像
+        global output_photo
+        show(output_photo, cmap='gray')  # 使用适合NDVI的色图
 
-    # 控件事件：更新状态标签文本
-    def show_status(message):
+    def show_status(message):  # 控件事件：更新状态标签文本
         status_label.config(text=message)
 
     # 创建主窗体
@@ -113,11 +156,17 @@ def create_main_window():
 
 # 主程序
 def main():
+    # 创建窗体
     main_window = create_main_window()
     main_window.mainloop()
-    
 
 
 # 程序入口
 if __name__ == "__main__":
+    # 全局变量
+    file_path = ''
+    band_group = []
+    output_photo = None
+
+    # 启动主程序
     main()
