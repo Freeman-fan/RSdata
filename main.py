@@ -106,7 +106,7 @@ def create_main_window():
 
     def show_image():  # 按钮事件：显示图像
         global output_photo
-        show(output_photo, cmap='gray')  # 使用适合NDVI的色图
+        show(output_photo, cmap='gray')
 
     def show_status(message):  # 控件事件：更新状态标签文本
         status_label.config(text=message)
