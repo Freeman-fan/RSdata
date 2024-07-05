@@ -15,12 +15,16 @@ class MainWindow(QWidget):
         self.setWindowTitle('遥感影像处理')
         self.setGeometry(200, 200, 500, 1000)
 
-        self.file_path = ''
-        self.vegetation_image = None
-        self.impervious_image = None
-        self.image = None
-        self.dataset = None
-        self.water_image = None
+        self.file_path = ''  # ENVI文件路径
+        self.image = None  # 原始图像
+        self.image_output = None  # 展示(保存)图像
+        self.image_raw = None  # 指数图像(未二值化)
+        self.t = 0  # 二值化阈值
+        self.dataset = ''  # 数据集
+        self.now_text = None
+        self.NDVI_image = None
+        self.NDBI_image = None
+        self.MNDWI_image = None
 
         # 创建数据库连接
         self.conn = sqlite3.connect('results.db')
@@ -29,34 +33,42 @@ class MainWindow(QWidget):
         self.cursor.execute(
             "CREATE TABLE IF NOT EXISTS areas (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, area_km2 REAL)")
 
-        self.file_textbox = QLineEdit(self)
+        self.file_textbox = QLineEdit('文件地址', self)
         self.browse_button = QPushButton('选择文件', self)
-        self.extract_vegetation_button = QPushButton('提取NDVI', self)
-        self.extract_impervious_button = QPushButton('提取NDBI', self)
-        self.extract_water_button = QPushButton('提取NDWI', self)
+        self.NDVI_button = QPushButton('提取NDVI', self)
+        self.NDBI_button = QPushButton('提取NDBI', self)
+        self.MNDWI_button = QPushButton('提取NDWI', self)
+        self.binarization_button = QPushButton('二值化', self)
+        self.bina_label = QLabel('二值化阈值', self)
+        self.bina_t_num_textbox = QLineEdit('参数', self)
         self.save_button = QPushButton('保存', self)
         self.area_label = QLineEdit('提取区域面积: 0 平方千米', self)
         self.image_label = QLabel(self)
 
         self.grid_layout = QGridLayout()
-        self.grid_layout.addWidget(self.file_textbox, 12, 0, 1, 300)
-        self.grid_layout.addWidget(self.browse_button, 1, 0, 1, 1)
+        self.grid_layout.addWidget(self.browse_button, 1, 0, 1, 2)
         self.browse_button.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.grid_layout.addWidget(self.extract_vegetation_button, 3, 0, 1, 1)
-        self.extract_vegetation_button.setSizePolicy(
+        self.grid_layout.addWidget(self.NDVI_button, 3, 0, 1, 2)
+        self.NDVI_button.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.grid_layout.addWidget(self.extract_impervious_button, 5, 0, 1, 1)
-        self.extract_impervious_button.setSizePolicy(
+        self.grid_layout.addWidget(self.NDBI_button, 5, 0, 1, 2)
+        self.NDBI_button.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.grid_layout.addWidget(self.extract_water_button, 7, 0, 1, 1)
-        self.extract_water_button.setSizePolicy(
+        self.grid_layout.addWidget(self.MNDWI_button, 7, 0, 1, 2)
+        self.MNDWI_button.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.grid_layout.addWidget(self.save_button, 9, 0, 1, 1)
+        self.grid_layout.addWidget(self.binarization_button, 9, 0, 1, 2)
+        self.binarization_button.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.grid_layout.addWidget(self.bina_label, 11, 0, 1, 1)
+        self.grid_layout.addWidget(self.bina_t_num_textbox, 11, 1, 1, 1)
+        self.grid_layout.addWidget(self.save_button, 12, 0, 1, 2)
         self.save_button.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.grid_layout.addWidget(self.area_label, 13, 0, 1, 300)
-        self.grid_layout.addWidget(self.image_label, 0, 3, 11, 300)
+        self.grid_layout.addWidget(self.file_textbox, 13, 0, 1, 300)
+        self.grid_layout.addWidget(self.area_label, 15, 0, 1, 300)
+        self.grid_layout.addWidget(self.image_label, 0, 3, 13, 300)
         self.image_label.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setLayout(self.grid_layout)
@@ -66,9 +78,10 @@ class MainWindow(QWidget):
             "border: 2px solid black; background-color: #f0f0f0;")
 
         self.browse_button.clicked.connect(self.browse_files)
-        self.extract_vegetation_button.clicked.connect(self.extract_vegetation)
-        self.extract_impervious_button.clicked.connect(self.extract_impervious)
-        self.extract_water_button.clicked.connect(self.extract_water)
+        self.NDVI_button.clicked.connect(self.get_NDVI)
+        self.NDBI_button.clicked.connect(self.get_NDBI)
+        self.MNDWI_button.clicked.connect(self.get_MNDWI)
+        self.binarization_button.clicked.connect(self.get_binarization)
         self.save_button.clicked.connect(self.save_image)
 
     # 选择文件
@@ -170,16 +183,16 @@ class MainWindow(QWidget):
         self.image_label.setPixmap(scaled_pixmap)
 
     # 提取NDVI及植被区域
-    def extract_vegetation(self):
+    def get_NDVI(self):
         if self.file_path == '':
             QMessageBox.warning(self, '错误', '请选择影像文件')
             return
         try:
             self.image = None
+            self.image_output = None
+            self.image_raw = None
+            self.now_text = 'NDVI'
             self.dataset = None
-            self.vegetation_image = None
-            self.impervious_image = None
-            self.water_image = None
             self.dataset = gdal.Open(self.file_path)
             if self.dataset is None:
                 QMessageBox.warning(self, '错误', '无法打开影像文件')
@@ -188,70 +201,57 @@ class MainWindow(QWidget):
             self.image = self.read_image_data(self.dataset)
             block_size = 10000  # 分块大小
             height, width, _ = self.image.shape
-            vegetation_image = np.zeros((height, width), dtype=np.uint8)
+            image_output = np.zeros((height, width), dtype=np.uint8)
             for row in range(0, height, block_size):
                 for col in range(0, width, block_size):
                     end_row = min(row + block_size, height)
                     end_col = min(col + block_size, width)
-
                     block = self.image[row:end_row, col:end_col, :]
                     nir_band = block[:, :, 3].astype(np.float32)  # 近红外波段索引为3
                     red_band = block[:, :, 2].astype(np.float32)  # 红光波段索引为2
                     ndvi = (nir_band - red_band) / (nir_band + red_band)
-                    # 使用设置的阈值进行植被提取
-                    vegetation_mask = np.where(
-                        ndvi > 0.4, 255, 0).astype(np.uint8)
-                    vegetation_image[row:end_row,
-                                     col:end_col] = vegetation_mask
-            self.water_image = None  # 释放NDWI图像的内存
-            self.impervious_image = None  # 释放NDBI域图像的内存
+                    # 标准化
+                    normalized = (ndvi - ndvi.min()) / \
+                        (ndvi.max() - ndvi.min())
+                    scaled = normalized * 255
+                    scaled = scaled.astype(np.uint8)
+                    image_output[row:end_row, col:end_col] = scaled
+                    self.image_raw = ndvi
+            self.image_output = image_output
+            self.display_image(self.image_output)
+            self.bina_t_num_textbox.setText('0.4')  # 设置默认阈值
+            QMessageBox.information(self, '成功', 'NDVI提取完成')
 
             # 保存NDVI结果为TIFF文件
             output_file = 'NDVI_output.tiff'  # 输出文件路径
             driver = gdal.GetDriverByName('GTiff')  # 获取TIFF驱动程序
             output_dataset = driver.Create(
                 output_file, width, height, 1, gdal.GDT_Float32)  # 创建输出数据集
-
             output_dataset.SetGeoTransform(self.dataset.GetGeoTransform())
             output_dataset.SetProjection(self.dataset.GetProjection())
-
             output_band = output_dataset.GetRasterBand(1)
-
             for row in range(0, height, block_size):
                 for col in range(0, width, block_size):
                     end_row = min(row + block_size, height)
                     end_col = min(col + block_size, width)
-
                     block_ndvi = ndvi[row:end_row, col:end_col]
                     output_band.WriteArray(block_ndvi, col, row)
-
             output_band.FlushCache()
-
-            self.vegetation_image = vegetation_image
-
-            self.display_image(self.vegetation_image)
-            # 计算植被区域面积
-            num_pixels = np.count_nonzero(self.vegetation_image)
-            area = num_pixels * 900 / 1000000
-            self.area_label.setText(f'植被面积：{area} 平方千米')
-            QMessageBox.information(self, '成功', 'NDVI提取完成')
-            self.save_area_to_db('vegetation', area)
             self.dataset = None  # 关闭数据集
         except Exception as e:
             QMessageBox.warning(self, '错误', '发生错误: {}'.format(str(e)))
 
     # 提取NDBI及不透水区域
-
-    def extract_impervious(self):
+    def get_NDBI(self):
         if self.file_path == '':
             QMessageBox.warning(self, '错误', '请选择影像文件')
             return
         try:
             self.image = None
+            self.image_output = None
+            self.image_raw = None
+            self.now_text = 'NDBI'
             self.dataset = None
-            self.vegetation_image = None
-            self.impervious_image = None
-            self.water_image = None
             self.dataset = gdal.Open(self.file_path)
             if self.dataset is None:
                 QMessageBox.warning(self, '错误', '无法打开影像文件')
@@ -259,24 +259,25 @@ class MainWindow(QWidget):
             self.image = self.read_image_data(self.dataset)
             block_size = 10000  # 分块大小
             height, width, _ = self.image.shape
-            impervious_image = np.zeros((height, width), dtype=np.uint8)
+            image_output = np.zeros((height, width), dtype=np.uint8)
             for row in range(0, height, block_size):
                 for col in range(0, width, block_size):
                     end_row = min(row + block_size, height)
                     end_col = min(col + block_size, width)
-
                     block = self.image[row:end_row, col:end_col, :]
                     mir_band = block[:, :, 4].astype(np.float32)  # 短波红外波段索引为4
                     nir_band = block[:, :, 3].astype(np.float32)  # 近红外波段索引为3
-
                     ndbi = (mir_band - nir_band) / (mir_band + nir_band)
-                    # 使用设置的阈值进行不透水区域提取
-                    impervious_mask = np.where(
-                        ndbi > 0.1, 255, 0).astype(np.uint8)
-                    impervious_image[row:end_row,
-                                     col:end_col] = impervious_mask
-            self.vegetation_image = None  # 释放植被区域图像的内存
-            self.water_image = None  # 释放水体区域图像的内存
+                    # 标准化
+                    normalized = (ndbi - ndbi.min()) / (ndbi.max()-ndbi.min())
+                    scaled = normalized * 255
+                    scaled = scaled.astype(np.uint8)
+                    image_output[row:end_row, col:end_col] = scaled
+                    self.image_raw = ndbi
+            self.image_output = image_output
+            self.display_image(self.image_output)
+            self.bina_t_num_textbox.setText('0.1')  # 设置默认阈值
+            QMessageBox.information(self, '成功', 'NDBI提取完成')
 
             # 保存NDBI结果为TIFF文件
             output_file = 'NDBI_output.tiff'  # 输出文件路径
@@ -290,33 +291,24 @@ class MainWindow(QWidget):
                 for col in range(0, width, block_size):
                     end_row = min(row + block_size, height)
                     end_col = min(col + block_size, width)
-
                     block_ndbi = ndbi[row:end_row, col:end_col]
                     output_band.WriteArray(block_ndbi, col, row)
             output_band.FlushCache()
-            self.impervious_image = impervious_image
-            self.display_image(self.impervious_image)
-            # 计算不透水区域面积
-            num_pixels = np.count_nonzero(self.impervious_image)
-            area = num_pixels * 900 / 1000000  # 每个像素面积为 30m * 30m = 900平方米
-            self.area_label.setText(f'不透水体面积：{area} 平方千米')
-            self.save_area_to_db('impervious', area)
-            QMessageBox.information(self, '成功', 'NDBI提取完成')
             self.dataset = None  # 关闭数据集
         except Exception as e:
             QMessageBox.warning(self, '错误', '发生错误: {}'.format(str(e)))
 
     # 提取MNDWI及水体区域
-    def extract_water(self):
+    def get_MNDWI(self):
         if self.file_path == '':
             QMessageBox.warning(self, '错误', '请选择影像文件')
             return
         try:
             self.image = None
+            self.image_output = None
+            self.image_raw = None
+            self.now_text = 'MNDWI'
             self.dataset = None
-            self.vegetation_image = None
-            self.impervious_image = None
-            self.water_image = None
             self.dataset = gdal.Open(self.file_path)
             if self.dataset is None:
                 QMessageBox.warning(self, '错误', '无法打开影像文件')
@@ -324,21 +316,26 @@ class MainWindow(QWidget):
             self.image = self.read_image_data(self.dataset)
             block_size = 10000  # 分块大小
             height, width, _ = self.image.shape
-            water_image = np.zeros((height, width), dtype=np.uint8)
+            image_output = np.zeros((height, width), dtype=np.uint8)
             for row in range(0, height, block_size):
                 for col in range(0, width, block_size):
                     end_row = min(row + block_size, height)
                     end_col = min(col + block_size, width)
-
                     block = self.image[row:end_row, col:end_col, :]
                     green_band = block[:, :, 1].astype(np.float32)  # 绿光波段索引为1
                     nir_band = block[:, :, 4].astype(np.float32)  # 短波红外波段索引为4
-
                     mndwi = (green_band - nir_band) / (green_band + nir_band)
-                    water_mask = np.where(mndwi > 0.3, 255, 0).astype(np.uint8)
-                    water_image[row:end_row, col:end_col] = water_mask
-            self.vegetation_image = None  # 释放植被区域图像的内存
-            self.impervious_image = None  # 释放不透水区域图像的内存
+                    # 标准化
+                    normalized = (mndwi - mndwi.min()) / \
+                        (mndwi.max()-mndwi.min())
+                    scaled = normalized*255
+                    scaled = scaled.astype(np.uint8)
+                    image_output[row:end_row, col:end_col] = scaled
+                    self.image_raw = mndwi
+            self.image_output = image_output
+            self.display_image(self.image_output)
+            self.bina_t_num_textbox.setText('0.3')  # 设置默认阈值
+            QMessageBox.information(self, '成功', 'MNDWI提取完成')
 
             # 保存MNDWI结果为TIFF文件
             output_file = 'MNDWI_output.tiff'  # 输出文件路径
@@ -355,17 +352,36 @@ class MainWindow(QWidget):
                     block_ndbi = mndwi[row:end_row, col:end_col]
                     output_band.WriteArray(block_ndbi, col, row)
             output_band.FlushCache()
-            self.water_image = water_image
-            self.display_image(self.water_image)
-            # 计算水体区域面积
-            num_pixels = np.count_nonzero(self.water_image)
-            area = num_pixels * 900 / 1000000  # 每个像素面积为 30m * 30m = 900平方米
-            self.area_label.setText(f'水体面积：{area} 平方千米')
-            self.save_area_to_db('water', area)
-            QMessageBox.information(self, '成功', 'MNDWI提取完成')
             self.dataset = None  # 关闭数据集
         except Exception as e:
             QMessageBox.warning(self, '错误', '发生错误: {}'.format(str(e)))
+
+    # 二值化计算
+    def get_binarization(self):
+        if self.file_path == '':
+            QMessageBox.warning(self, '错误', '请选择影像文件')
+            return
+        try:
+            image = self.image_raw
+            t = self.t
+            try:
+                t_str = self.bina_t_num_textbox.text()
+                t = float(t_str)
+                print(t)
+            except Exception:
+                t = self.t
+            image_mask = np.where(image > t, 255, 0).astype(np.uint8)
+            self.image_output = image_mask
+            self.display_image(self.image_output)
+
+            # 计算区域面积
+            num_pixels = np.count_nonzero(self.image_output)
+            area = num_pixels * 900 / 1000000
+            self.area_label.setText(f'{self.now_text}提取面积：{area} 平方千米')
+            self.save_area_to_db('vegetation', area)
+        except Exception as e:
+            QMessageBox.warning(self, '错误', '发生错误: {}'.format(str(e)))
+        pass
 
     # 保存
     def save_image(self):
@@ -379,12 +395,14 @@ class MainWindow(QWidget):
                 save_path = file_dialog.selectedFiles()[0]
                 if save_path != '':
                     image_data = None
-                    if self.vegetation_image is not None:
-                        image_data = self.vegetation_image
-                    elif self.water_image is not None:
-                        image_data = self.water_image
-                    elif self.impervious_image is not None:
-                        image_data = self.impervious_image
+                    if self.NDVI_image is not None:
+                        image_data = self.NDVI_image
+                    elif self.MNDWI_image is not None:
+                        image_data = self.MNDWI_image
+                    elif self.NDBI_image is not None:
+                        image_data = self.NDBI_image
+                    elif self.image_output is not None:
+                        image_data = self.image_output
 
                     if image_data is not None:
                         driver = gdal.GetDriverByName('GTiff')
